@@ -1,4 +1,4 @@
-# Contributing to CH32V003 Display Test
+# Contributing to CH32V003 Voltage Stabilizer
 
 Thank you for your interest in contributing to this project! This document provides guidelines and information for contributors.
 
@@ -39,7 +39,9 @@ Before contributing, ensure you have:
 1. **Hardware**
    - CH32V003 development board or custom PCB
    - WCH-Link programmer
-   - 7-segment display (common anode, 3-digit)
+   - Relay modules for testing (5x)
+   - Voltage sensing circuit
+   - Multi-tap transformer (for full system test)
 
 2. **Software**
    - [MounRiver Studio](http://www.mounriver.com/) (recommended IDE)
@@ -49,7 +51,8 @@ Before contributing, ensure you have:
 3. **Knowledge**
    - Basic C programming
    - Embedded systems concepts
-   - Understanding of GPIO and microcontrollers
+   - Understanding of GPIO, ADC, and timers
+   - Familiarity with voltage regulation concepts
 
 ---
 
@@ -59,11 +62,11 @@ Before contributing, ensure you have:
 
 ```bash
 # Fork the repository on GitHub, then clone your fork
-git clone https://github.com/YOUR_USERNAME/Display-Test.git
-cd Display-Test
+git clone https://github.com/YOUR_USERNAME/Stablizer.git
+cd Stablizer
 
 # Add upstream remote
-git remote add upstream https://github.com/Joyboy7385/Display-Test.git
+git remote add upstream https://github.com/Joyboy7385/Stablizer.git
 ```
 
 ### 2. Create a Branch
@@ -80,7 +83,7 @@ git checkout -b fix/bug-description
 
 **Using MounRiver Studio:**
 1. Open MounRiver Studio
-2. File → Import → Existing Projects
+2. File -> Import -> Existing Projects
 3. Navigate to the cloned repository
 4. Select and import the project
 
@@ -90,7 +93,10 @@ git checkout -b fix/bug-description
 export PATH=$PATH:/path/to/riscv-none-embed/bin
 
 # Build the project
-make all
+riscv-none-embed-gcc -march=rv32ec -mabi=ilp32e -O2 \
+  -o stabilizer.elf main.c system_ch32v00x.c \
+  ch32v00x_gpio.c ch32v00x_rcc.c ch32v00x_adc.c \
+  ch32v00x_tim.c ch32v00x_flash.c ch32v00x_misc.c
 ```
 
 ---
@@ -100,24 +106,28 @@ make all
 ### Types of Contributions
 
 1. **Bug Fixes**
-   - Fix issues with display functionality
-   - Resolve voltage stability problems
-   - Correct timing issues
+   - Fix issues with voltage regulation logic
+   - Resolve ADC reading problems
+   - Correct relay control timing
+   - Fix 5V stability issues
 
 2. **New Features**
-   - Additional display patterns
-   - New demo modes
-   - Support for different display types
+   - Additional protection features
+   - Serial communication for monitoring
+   - Display support for voltage readout
+   - Configurable threshold parameters
 
 3. **Documentation**
    - Improve existing documentation
    - Add examples and tutorials
+   - Create wiring diagrams
    - Translate to other languages
 
 4. **Testing**
    - Test on different hardware configurations
    - Report compatibility issues
    - Verify fixes and features
+   - Long-term reliability testing
 
 ### Contribution Workflow
 
@@ -147,22 +157,20 @@ make all
 
 ```c
 // Function names: CamelCase with descriptive names
-void GPIO_Init_Display(void)
+void StateMachine1_Calculate_Voltages(void)
 {
     // Variable declarations at the beginning of blocks
-    uint8_t i;
-    GPIO_InitTypeDef GPIO_InitStructure = {0};
+    uint16_t adc;
+    float opv;
 
     // Comments for complex logic
     // Use 4 spaces for indentation (no tabs)
-    for(i = 0; i < 10; i++) {
-        // Braces on same line for control structures
-        if(condition) {
-            DoSomething();
-        } else {
-            DoSomethingElse();
-        }
-    }
+    adc = ADC_ReadCount_Filtered();
+    opv = Calculate_OPV(adc);
+
+    // Update global state
+    currentOPV = opv;
+    currentIPV = opv * relaySteps[currentStep].tap_ratio;
 }
 ```
 
@@ -170,10 +178,11 @@ void GPIO_Init_Display(void)
 
 | Element | Convention | Example |
 |---------|------------|---------|
-| Functions | CamelCase | `Display_Refresh()` |
-| Constants | UPPER_SNAKE_CASE | `SEG_A_PIN` |
-| Variables | camelCase | `segPattern` |
-| Macros | UPPER_SNAKE_CASE | `DIGIT_PAT` |
+| Functions | CamelCase | `StateMachine2_Control_R5()` |
+| Constants | UPPER_SNAKE_CASE | `HICUT_THRESHOLD` |
+| Variables | camelCase | `currentStep` |
+| Macros | UPPER_SNAKE_CASE | `PIN_R1` |
+| Types | CamelCase_t | `RelayStep_t` |
 
 ### Documentation Requirements
 
@@ -199,6 +208,7 @@ void FunctionName(uint8_t param1, uint16_t param2)
 2. **Avoid magic numbers** - Use named constants
 3. **Handle edge cases** - Validate inputs where appropriate
 4. **Comment why, not what** - Code should be self-documenting
+5. **Use volatile** - For variables shared with ISRs
 
 ---
 
@@ -209,30 +219,38 @@ void FunctionName(uint8_t param1, uint16_t param2)
 Before submitting changes:
 
 1. **Test at multiple voltages**
-   - 3.3V operation
-   - 5.0V operation
+   - 3.3V MCU operation
+   - 5.0V MCU operation (critical!)
    - Verify no issues at voltage boundaries
 
-2. **Test all display modes**
-   - Single digit display
-   - Multi-digit display
-   - All segments (888 test)
+2. **Test all relay combinations**
+   - Each step (0-7) functions correctly
+   - Step transitions are smooth
+   - No relay chatter
 
-3. **Long-running tests**
+3. **Test protection features**
+   - High-cut triggers at correct threshold
+   - Low-cut triggers when enabled
+   - Resume functions correctly
+
+4. **Long-running tests**
    - Run for at least 1 hour
-   - Check for flickering or instability
+   - Check for drift or instability
+   - Monitor temperature of components
 
 ### Test Checklist
 
 ```markdown
 - [ ] Compiles without warnings
 - [ ] Works at 3.3V
-- [ ] Works at 5.0V
-- [ ] All digits display correctly
-- [ ] No visible flickering
-- [ ] No ghosting between digits
-- [ ] Button inputs work (if applicable)
-- [ ] Power consumption is reasonable
+- [ ] Works at 5.0V (with Flash latency fix)
+- [ ] All relay steps function correctly
+- [ ] ADC readings are stable
+- [ ] High-cut protection works
+- [ ] Low-cut protection works (when enabled)
+- [ ] Settings save and load correctly
+- [ ] Calibration mode functions
+- [ ] LED indicators show correct states
 ```
 
 ### Reporting Test Results
@@ -244,13 +262,16 @@ Include in your pull request:
 
 **Hardware Configuration:**
 - MCU: CH32V003A4M6
-- Display: [Model/Type]
-- Voltage: [3.3V / 5V]
+- Operating Voltage: 5V
+- Relay Type: SRD-05VDC-SL-C
+- Transformer: [Description]
 - Programmer: WCH-Link
 
 **Test Results:**
 - [x] Basic functionality
 - [x] 5V stability
+- [x] All 8 relay steps
+- [x] Protection thresholds
 - [x] Long-running test (X hours)
 - [ ] Edge case (describe any failures)
 
@@ -292,6 +313,7 @@ Brief description of changes
 - [ ] New feature
 - [ ] Documentation update
 - [ ] Refactoring
+- [ ] Performance improvement
 
 ## Related Issues
 Closes #XX
@@ -310,6 +332,7 @@ Describe testing performed
 - [ ] Comments added for complex code
 - [ ] Documentation updated
 - [ ] No new warnings generated
+- [ ] Tested at 5V operation
 ```
 
 ### Review Process
@@ -345,12 +368,12 @@ What actually happens
 
 ## Environment
 - MCU: CH32V003A4M6
-- Voltage: 5V
-- Display Type: Common Anode 3-digit
+- Operating Voltage: 5V
+- Firmware Version: [commit hash]
 - IDE: MounRiver Studio v1.X
 
 ## Additional Information
-Screenshots, logic analyzer captures, etc.
+Screenshots, oscilloscope captures, etc.
 ```
 
 ### Feature Requests
@@ -370,6 +393,18 @@ How you think it could be implemented (optional)
 ## Alternatives Considered
 Other approaches you've thought about
 ```
+
+---
+
+## Safety Considerations
+
+When contributing to this project, keep in mind:
+
+1. **Mains Voltage**: This project controls mains-voltage equipment
+2. **Test Safely**: Always use isolated test setups
+3. **Document Hazards**: Clearly document any safety-critical code
+4. **Protection Logic**: Be extra careful with protection-related code
+5. **Review Carefully**: All protection-related changes require thorough review
 
 ---
 
